@@ -4,7 +4,7 @@
 
 **Code:**
 
-```other
+```python
 import requests
 from bs4 import BeautifulSoup
 import spacy
@@ -160,7 +160,7 @@ By manually specifying a list of named entities such as "TensorFlow", "Google", 
 
 ### b. Used in Tagging Raw Data Sourced from the Internet or Clients
 
-The `collect_data` function shows how to fetch and process text data from web pages, and tells the model's ability to work with internet-sourced data. And, the `tag_raw_data` function explains how the trained model can be applied to new, raw text data to identify and label named entities. This is very important for practical applications as it allows the model to process and extract valuable information from unstructured data, doesn't matter if it is collected from the internet or the clients.
+The `collect_data` function shows how to fetch and process text data from web pages. And, the `tag_raw_data` function explains how the trained model can be applied to new, raw text data to identify and label named entities. This is very important for practical applications as it allows the model to process and extract valuable information from unstructured data, doesn't matter if it is collected from the internet or the clients.
 
 # What does NER model have to do with pretraining?
 
@@ -172,12 +172,43 @@ The significance of NER models in the context of pre-training lies in their abil
 
 1. Transfer learning: Pre-trained models like GPT-4 or RoBERTa can be adapted for specific NER tasks, saving computational effort and often leading to better performance compared to training from scratch.
 2. Automatic feature learning: Deep learning-based NER models can learn features automatically from the data, reducing the reliance on extensive manual feature engineering required in traditional methods. This capability makes deep learning models more efficient and effective.
-3. Handling large datasets: Deep learning models, including transformer architectures like GPT, can handle vast datasets and complex structures, often outperforming traditional approaches when there is a wealth of training data available.
-4. Capturing sequential information: Recurrent Neural Networks (RNNs) and Long Short-Term Memory (LSTM) networks, which are commonly used in NER, can capture sequential information, making them suitable for processing textual data with context.
-5. Non-linear representation learning: Deep learning approaches map input data to non-linear representations, enabling the learning of complex relations present in the input data. This capability helps in building state-of-the-art NER systems.
-6. Reduced feature engineering: By using deep learning techniques, a significant amount of time and resources spent on feature engineering, which is required for traditional approaches, can be avoided.
+3. Capturing sequential information: Recurrent Neural Networks (RNNs) and Long Short-Term Memory (LSTM) networks, which are commonly used in NER, can capture sequential information, making them suitable for processing textual data with context.
+4. Non-linear representation learning: Deep learning approaches map input data to non-linear representations, enabling the learning of complex relations present in the input data. This capability helps in building state-of-the-art NER systems.
 
 In summary, pre-trained NER models offer significant advantages in terms of performance, efficiency, and the ability to handle complex data, making them a valuable tool in the field of named entity recognition.
+
+**code:**
+
+```python
+# Example training data for NER
+train_data = [
+    ("Hugging Face is a company based in New York City.", {"entities": [(0, 16, "ORG"), (31, 45, "LOC")]}),
+    ("Apple is looking at buying U.K. startup for $1 billion", {"entities": [(0, 5, "ORG"), (27, 31, "GPE"), (44, 54, "MONEY")]})
+]
+
+# Tokenize the training data
+inputs = tokenizer(train_data, is_split_into_words=True, return_offsets_mapping=True, padding=True, truncation=True)
+
+# Convert the tokenized data into a format suitable for training
+labels = []
+for i, label in enumerate(train_data):
+    word_ids = tokenizer.convert_tokens_to_ids(label[0])
+    new_label_ids = []
+    for word_id in word_ids:
+        # Here you would map your entity labels to IDs based on your NER task
+        # This is a simplified example; in practice, we'd need a more complex mapping
+        if word_id == tokenizer.convert_tokens_to_ids("New"):
+            new_label_ids.append(1) # Assuming 1 is the ID for "LOC"
+        else:
+            new_label_ids.append(0) # 0 is typically used for padding or non-entity tokens
+    labels.append(new_label_ids)
+
+inputs["labels"] = labels
+```
+
+The connection between NER models and pretraining is that pre-trained models, like BERT, can be fine-tuned for NER tasks. This process involves taking a pre-trained model and continuing its training on a labeled dataset for NER. The pre-trained model has already learned a rich representation of language, which includes the contextual relationships between words. This pre-trained knowledge is beneficial for NER because it helps the model to understand the context in which entities appear, which is crucial for accurately identifying and classifying them.
+
+While the pretraining process itself is not directly focused on NER, the skills and knowledge gained during pretraining are highly beneficial for NER tasks. The contextual understanding and general language representation learned during pretraining enable models to better understand the text they are analyzing, leading to improved performance on NER tasks.
 
 # Tackling Catastrophic Forgetting:
 
@@ -189,7 +220,7 @@ Catastrophic forgetting refers to a phenomenon observed in machine learning mode
 
 **Elastic weight Consolidation**
 
-**EWC** is a technique introduced by Kirkpatrick et al. in the paper "Overcoming catastrophic forgetting in neural networks". It addresses the problem of catastrophic forgetting by adding a regularization term to the loss function. This term penalizes changes to parameters that are important for previous tasks, based on the Fisher Information Matrix.
+**EWC** is a technique introduced by Kirkpatrick et al. in the paper "Overcoming catastrophic Forgetting in neural networks". It addresses the problem of catastrophic forgetting by adding a regularization term to the loss function. This term penalizes changes to parameters that are important for previous tasks, based on the Fisher Information Matrix.
 
 [Overcoming catastrophic forgetting in neural networks | Proceedings of the National Academy of Sciences](https://www.pnas.org/doi/10.1073/pnas.1611835114)
 
@@ -202,24 +233,9 @@ Catastrophic forgetting refers to a phenomenon observed in machine learning mode
 - **PyTorch** is an open-source machine learning library used for applications such as computer vision and natural language processing. It provides the core functions for defining and training neural networks.
 - **Transformers** library, developed by Hugging Face, provides thousands of pre-trained models to perform tasks on texts such as classification, information extraction, question answering, and more. It also provides easy-to-use interfaces to work with these models.
 
-### Key Functions and Methods
-
-- `BertTokenizer` and `BertForSequenceClassification`: These are classes from the Transformers library. The tokenizer is used to convert text into a format that the BERT model can understand (tokenization), and `BertForSequenceClassification` is a BERT model adapted for text classification tasks.
-- `load_dataset`: A function from the `datasets` library (also by Hugging Face) used to load and preprocess datasets.
-- `DataLoader` and `Dataset`: PyTorch classes for handling batches of data, making it easier to iterate over data during training.
-- `torch.optim.Adam`: An optimizer from PyTorch, used for updating model parameters based on gradients.
-- `torch.cuda.amp`: Automatic Mixed Precision (AMP) package from PyTorch, used for faster training with reduced precision arithmetic.
-
-### Custom Classes and Functions
-
-- `BertForSequenceClassificationEWC`: A custom class inheriting from `BertForSequenceClassification`, extended to include EWC support by adding methods to compute the EWC loss and update the Fisher Information Matrix and optimal parameters.
-- `HF_Dataset`: A custom PyTorch `Dataset` class to handle data from the Hugging Face `datasets` library.
-- `update_ewc_params`: A function to update the Fisher Information Matrix and optimal parameters after training on a task.
-- `custom_train`: A custom training loop that includes the computation of the EWC loss along with the standard loss.
-
 **Code**
 
-```other
+```python
 import torch
 from torch.utils.data import DataLoader, Dataset
 from transformers import BertTokenizer, BertForSequenceClassification, BertConfig
@@ -351,11 +367,26 @@ torch.save({
 
 (I tried to run this on CoLab but could not run it as the GPU resources are limited, I tried using FP16 precision as well. But it was training for more than 8 hours, So I could not save the model.)
 
-⟶ The above code helps to solve the catastrophic forgetting problem during continuous pre-training for domain-specific knowledge. If you observe the code, it is intended to pre-train on the news dataset, and emotion dataset, which are of two different domains.
+⟶ The above code helps to solve the catastrophic forgetting problem during **continuous pre-training for domain-specific knowledge.** If you observe the code, it is intended to pre-train on the news dataset, and emotion dataset, which are of two different domains.
+
+### Key Functions and Methods
+
+- `BertTokenizer` and `BertForSequenceClassification`: These are classes from the Transformers library. The tokenizer is used to convert text into a format that the BERT model can understand (tokenization), and `BertForSequenceClassification` is a BERT model adapted for text classification tasks.
+- `load_dataset`: A function from the `datasets` library (also by Hugging Face) used to load and preprocess datasets.
+- `DataLoader` and `Dataset`: PyTorch classes for handling batches of data, making it easier to iterate over data during training.
+- `torch.optim.Adam`: An optimizer from PyTorch, used for updating model parameters based on gradients.
+- `torch.cuda.amp`: Automatic Mixed Precision (AMP) package from PyTorch, used for faster training with reduced precision arithmetic.
+
+### Custom Classes and Functions
+
+- `BertForSequenceClassificationEWC`: A custom class inheriting from `BertForSequenceClassification`, extended to include EWC support by adding methods to compute the EWC loss and update the Fisher Information Matrix and optimal parameters.
+- `HF_Dataset`: A custom PyTorch `Dataset` class to handle data from the Hugging Face `datasets` library.
+- `update_ewc_params`: A function to update the Fisher Information Matrix and optimal parameters after training on a task.
+- `custom_train`: A custom training loop that includes the computation of the EWC loss along with the standard loss.
 
 ## **Some other potential solutions**
 
-Did not get the time to implement these. I just did a fair bit of research on the other solutions.
+Did not get the time to implement these. But these could be considered as well.
 
 ### Progressive Neural Networks (PNNs)
 
@@ -405,7 +436,7 @@ LLAMA-2-13B can handle context length above 128K.
 
 The above code can be adjusted as follows
 
-```other
+```python
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # Load tokenizer and model
