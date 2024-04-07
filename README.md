@@ -1,5 +1,184 @@
 # Assignment for WondersAI
 
+# Training a NER model
+
+**Code:**
+
+```other
+import requests
+from bs4 import BeautifulSoup
+import spacy
+from spacy.tokens import DocBin
+from spacy.training import Example
+from spacy.util import minibatch, compounding
+import spacy.matcher
+from sklearn.model_selection import KFold
+import random
+
+# Step 1: Data Collection
+def collect_data(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, "html.parser")
+    text_data = " ".join([p.get_text() for p in soup.find_all("p")])
+    return text_data
+
+# Step 2: Data Preprocessing
+def preprocess_data(text_data):
+    nlp = spacy.blank("en")
+    doc = nlp(text_data)
+    preprocessed_data = " ".join([token.text.lower() for token in doc if not token.is_punct])
+    return preprocessed_data
+
+def annotate_data(nlp, text_data, named_entities):
+    matcher = spacy.matcher.PhraseMatcher(nlp.vocab, attr="LOWER")
+    patterns = [nlp.make_doc(entity) for entity in named_entities]
+    matcher.add("TerminologyList", patterns)
+    
+    doc = nlp(text_data)
+    matches = matcher(doc)
+    spans = [doc[start:end] for _, start, end in matches]
+    filtered_spans = spacy.util.filter_spans(spans)
+    entities = [(span.start_char, span.end_char, "TERMINOLOGY") for span in filtered_spans]
+    
+    return Example.from_dict(doc, {"entities": entities})
+
+# Model Training
+def train_model(annotated_data, iterations):
+    nlp = spacy.blank("en")
+    if "ner" not in nlp.pipe_names:
+        ner = nlp.add_pipe("ner")
+    ner.add_label("TERMINOLOGY")
+
+    other_pipes = [pipe for pipe in nlp.pipe_names if pipe != "ner"]
+    with nlp.disable_pipes(*other_pipes):
+        optimizer = nlp.begin_training()
+        for itn in range(iterations):
+            losses = {}
+            examples = [example for example in annotated_data]
+            nlp.update(examples, sgd=optimizer, drop=0.5, losses=losses)
+            print(f"Iteration {itn + 1}: Loss = {losses['ner']:.4f}")
+    return nlp
+
+# Model Evaluation
+def evaluate_model(nlp, test_data):
+    scores = nlp.evaluate(test_data)
+    return scores
+
+def tag_raw_data(model, raw_data):
+    doc = model(raw_data)
+    tagged_data = [(ent.text, ent.label_) for ent in doc.ents]
+    return tagged_data
+
+def main():
+    nlp = spacy.blank("en")
+    training_urls = [
+        "https://developers.google.com/machine-learning/crash-course/first-steps-with-tensorflow/toolkit",
+        "https://en.wikipedia.org/wiki/TensorFlow",
+        "https://www.tensorflow.org/learn",
+        "https://en.wikipedia.org/wiki/Google_Brain",
+        "https://en.wikipedia.org/wiki/Python_(programming_language)",
+            # Add more URLs with relevant content
+    ]
+    named_entities = ["TensorFlow", "Google", "Python", "Machine Learning"]
+
+    annotated_data = []
+    for url in training_urls:
+        text_data = collect_data(url)
+        preprocessed_data = preprocess_data(text_data)
+        annotated_data.append(annotate_data(nlp, preprocessed_data, named_entities))
+
+    # Shuffle and split the data for cross-validation
+
+    # random.shuffle(annotated_data)
+    # Shuffle and prepare for cross-validation
+    random.shuffle(annotated_data)
+    kf = KFold(n_splits=5)
+    
+    best_f1_score = -1
+    best_model_path = ""
+    
+    for fold, (train_index, test_index) in enumerate(kf.split(annotated_data)):
+        train_data = [annotated_data[i] for i in train_index]
+        test_data = [annotated_data[i] for i in test_index]
+        
+        # Train model on this fold's training data
+        model = train_model(train_data, iterations=100)
+        
+        # Evaluate model on this fold's test data
+        evaluation_results = evaluate_model(model, test_data)
+        print(f"Fold {fold+1} Evaluation Results: {evaluation_results}")
+        
+        # Check if this model is the best so far
+        if evaluation_results['ents_f'] > best_f1_score:
+            best_f1_score = evaluation_results['ents_f']
+            best_model_path = f"best_model_fold_{fold+1}"
+            model.to_disk(best_model_path)
+    
+    print(f"Best F1 Score: {best_f1_score}")
+    
+    # Load the best model from disk
+    best_model = spacy.load(best_model_path)
+    
+    # Model Deployment and Tagging with the best model
+    sample_text = "TensorFlow, developed by Google, is widely used in Python programming for machine learning projects, often requiring GPU acceleration."
+    tagged_data = tag_raw_data(best_model, sample_text)
+    print("Tagged Data:", tagged_data)
+
+    # kf = KFold(n_splits=5)  # 5-fold cross-validation
+    # for train_index, test_index in kf.split(annotated_data):
+    #     train_data = [annotated_data[i] for i in train_index]
+    #     test_data = [annotated_data[i] for i in test_index]
+    #     model = train_model(train_data, iterations=30)
+    #     evaluation_results = evaluate_model(model, test_data)
+    #     print(f"Evaluation Results: {evaluation_results}")
+
+    # # After cross-validation, train a final model on all data
+    # final_model = train_model(annotated_data, iterations=200)
+
+    # # Model Deployment and Tagging
+    # sample_text = "TensorFlow, developed by Google, is widely used in Python programming for machine learning projects, often requiring GPU acceleration."
+    # tagged_data = tag_raw_data(final_model, sample_text)
+    # print("Tagged Data:", tagged_data)
+
+if __name__ == "__main__":
+    main()
+```
+
+for results, check my GitHub repo:
+
+[Github](https://github.com/impravin22/Named_Entity_Stuff/blob/main/NER.ipynb)
+
+### Overview
+
+I developed this script to tackle a Named Entity Recognition (NER) task using the `spaCy` library, a powerful tool for natural language processing (NLP). The goal is to identify and then classify named entities (like "TensorFlow", "Google", "Python", and "Machine Learning".) within text data collected from various web sources.
+
+Overall, this proposed methodology can
+
+### a. Identify Domain-Specific Terminology
+
+By manually specifying a list of named entities such as "TensorFlow", "Google", "Python", and "Machine Learning", I focused on a specific domain (in this case, technology and programming languages). The use of `spaCy`'s `PhraseMatcher` in the `annotate_data` function allows for the efficient identification of these terms within the preprocessed text data.
+
+### b. Used in Tagging Raw Data Sourced from the Internet or Clients
+
+The `collect_data` function shows how to fetch and process text data from web pages, and tells the model's ability to work with internet-sourced data. And, the `tag_raw_data` function explains how the trained model can be applied to new, raw text data to identify and label named entities. This is very important for practical applications as it allows the model to process and extract valuable information from unstructured data, doesn't matter if it is collected from the internet or the clients.
+
+# What does NER model have to do with pretraining?
+
+[Named Entity Recognition: The Mechanism, Methods, Use Cases,](https://www.altexsoft.com/blog/named-entity-recognition/)
+
+[A Beginner&#x27;s Introduction to NER (Named Entity Recognition)](https://www.analyticsvidhya.com/blog/2021/11/a-beginners-introduction-to-ner-named-entity-recognition/)
+
+The significance of NER models in the context of pre-training lies in their ability to enhance the performance and efficiency of named entity recognition tasks. Here are some key points:
+
+1. Transfer learning: Pre-trained models like GPT-4 or RoBERTa can be adapted for specific NER tasks, saving computational effort and often leading to better performance compared to training from scratch.
+2. Automatic feature learning: Deep learning-based NER models can learn features automatically from the data, reducing the reliance on extensive manual feature engineering required in traditional methods. This capability makes deep learning models more efficient and effective.
+3. Handling large datasets: Deep learning models, including transformer architectures like GPT, can handle vast datasets and complex structures, often outperforming traditional approaches when there is a wealth of training data available.
+4. Capturing sequential information: Recurrent Neural Networks (RNNs) and Long Short-Term Memory (LSTM) networks, which are commonly used in NER, can capture sequential information, making them suitable for processing textual data with context.
+5. Non-linear representation learning: Deep learning approaches map input data to non-linear representations, enabling the learning of complex relations present in the input data. This capability helps in building state-of-the-art NER systems.
+6. Reduced feature engineering: By using deep learning techniques, a significant amount of time and resources spent on feature engineering, which is required for traditional approaches, can be avoided.
+
+In summary, pre-trained NER models offer significant advantages in terms of performance, efficiency, and the ability to handle complex data, making them a valuable tool in the field of named entity recognition.
+
 # Tackling Catastrophic Forgetting:
 
 **Catastrophic Forgetting**
@@ -248,186 +427,37 @@ Position Interpolation: This method extends the context window of LLMs by interp
 
 NTK-Aware and Dynamic NTK: These methods leverage the Neural Tangent Kernel (NTK) to efficiently extend the context length. The NTK-Aware method optimizes pre-training by considering the NTK, while the Dynamic NTK method adjusts the NTK during fine-tuning to handle longer sequences.
 
-*As our main goal is to increase the context legth during pre-training, we should consider NTK-aware Training.*
+*As our main goal is to increase the context length during pre-training, we should consider NTK-aware Training.*
 
 [Aman&#x27;s AI Journal • NLP • LLM Context Length Extension](https://aman.ai/primers/ai/context-length-extension/)
 
-# Training a NER model
+The github repository related to the paper "Data Engineering for Scaling Language Models to 128K Context" proposes a method to improve the handling of context length beyond 128K during the pretraining phase of language models. It focuses on enhancing the capability of language models to process and benefit from longer contexts, which is crucial for understanding and generating more coherent and contextually relevant responses in complex tasks​.
 
-**Code:**
+[Github](https://github.com/FranxYao/Long-Context-Data-Engineering)
 
-```other
-import requests
-from bs4 import BeautifulSoup
-import spacy
-from spacy.tokens import DocBin
-from spacy.training import Example
-from spacy.util import minibatch, compounding
-import spacy.matcher
-from sklearn.model_selection import KFold
-import random
+**Proposed method:**
 
-# Step 1: Data Collection
-def collect_data(url):
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-    text_data = " ".join([p.get_text() for p in soup.find_all("p")])
-    return text_data
+### Architectural Innovations
 
-# Step 2: Data Preprocessing
-def preprocess_data(text_data):
-    nlp = spacy.blank("en")
-    doc = nlp(text_data)
-    preprocessed_data = " ".join([token.text.lower() for token in doc if not token.is_punct])
-    return preprocessed_data
+#### Custom Sparse Attention Mechanism
 
-def annotate_data(nlp, text_data, named_entities):
-    matcher = spacy.matcher.PhraseMatcher(nlp.vocab, attr="LOWER")
-    patterns = [nlp.make_doc(entity) for entity in named_entities]
-    matcher.add("TerminologyList", patterns)
-    
-    doc = nlp(text_data)
-    matches = matcher(doc)
-    spans = [doc[start:end] for _, start, end in matches]
-    filtered_spans = spacy.util.filter_spans(spans)
-    entities = [(span.start_char, span.end_char, "TERMINOLOGY") for span in filtered_spans]
-    
-    return Example.from_dict(doc, {"entities": entities})
+- **Design Principle**: Develop a custom sparse attention mechanism that significantly reduces the computational and memory requirements compared to full attention mechanisms. This could involve a mix of local windowed attention and global attention on key tokens, similar to the Longformer or BigBird, but optimized for even longer sequences.
+- **Implementation**: Introduce "dynamic sparse attention" where the sparsity pattern can adapt based on the content of the sequence, focusing computational resources on the most informative parts of the text.
 
-# Model Training
-def train_model(annotated_data, iterations):
-    nlp = spacy.blank("en")
-    if "ner" not in nlp.pipe_names:
-        ner = nlp.add_pipe("ner")
-    ner.add_label("TERMINOLOGY")
+#### Hierarchical Transformer
 
-    other_pipes = [pipe for pipe in nlp.pipe_names if pipe != "ner"]
-    with nlp.disable_pipes(*other_pipes):
-        optimizer = nlp.begin_training()
-        for itn in range(iterations):
-            losses = {}
-            examples = [example for example in annotated_data]
-            nlp.update(examples, sgd=optimizer, drop=0.5, losses=losses)
-            print(f"Iteration {itn + 1}: Loss = {losses['ner']:.4f}")
-    return nlp
+- **Design Principle**: Process the document in chunks at a lower level and then integrate these representations at a higher level, effectively capturing long-range dependencies without processing the entire document at once.
+- **Implementation**: First, divide the document into smaller segments (e.g., 512 tokens each). Use a Transformer-based model to encode these segments into representations. Then, use another Transformer layer to integrate these segment representations, allowing for cross-segment context understanding.
 
-# Model Evaluation
-def evaluate_model(nlp, test_data):
-    scores = nlp.evaluate(test_data)
-    return scores
+In short,
 
-def tag_raw_data(model, raw_data):
-    doc = model(raw_data)
-    tagged_data = [(ent.text, ent.label_) for ent in doc.ents]
-    return tagged_data
+1. **Sparse Attention**: Implement a sliding window attention with selective global attention tokens to manage long sequences efficiently.
+2. **Hierarchical Processing**: Process the input text in chunks at a lower level and then integrate these representations at a higher level, allowing the model to capture long-range dependencies without processing the entire sequence at once.
+3. **Adaptive Training**: Employ curriculum learning, gradually increasing the sequence length the model is trained on, allowing the model to adapt to longer contexts over time.
 
-def main():
-    nlp = spacy.blank("en")
-    training_urls = [
-        "https://developers.google.com/machine-learning/crash-course/first-steps-with-tensorflow/toolkit",
-        "https://en.wikipedia.org/wiki/TensorFlow",
-        "https://www.tensorflow.org/learn",
-        "https://en.wikipedia.org/wiki/Google_Brain",
-        "https://en.wikipedia.org/wiki/Python_(programming_language)",
-            # Add more URLs with relevant content
-    ]
-    named_entities = ["TensorFlow", "Google", "Python", "Machine Learning"]
+I could not find a convincing method for this on the internet. So I had to use GPT-4 related LLMs to get familiar with this.
 
-    annotated_data = []
-    for url in training_urls:
-        text_data = collect_data(url)
-        preprocessed_data = preprocess_data(text_data)
-        annotated_data.append(annotate_data(nlp, preprocessed_data, named_entities))
+[Efficient Long-Text Understanding with Short-Text Models](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00547/115346/Efficient-Long-Text-Understanding-with-Short-Text)
 
-    # Shuffle and split the data for cross-validation
-
-    # random.shuffle(annotated_data)
-    # Shuffle and prepare for cross-validation
-    random.shuffle(annotated_data)
-    kf = KFold(n_splits=5)
-    
-    best_f1_score = -1
-    best_model_path = ""
-    
-    for fold, (train_index, test_index) in enumerate(kf.split(annotated_data)):
-        train_data = [annotated_data[i] for i in train_index]
-        test_data = [annotated_data[i] for i in test_index]
-        
-        # Train model on this fold's training data
-        model = train_model(train_data, iterations=100)
-        
-        # Evaluate model on this fold's test data
-        evaluation_results = evaluate_model(model, test_data)
-        print(f"Fold {fold+1} Evaluation Results: {evaluation_results}")
-        
-        # Check if this model is the best so far
-        if evaluation_results['ents_f'] > best_f1_score:
-            best_f1_score = evaluation_results['ents_f']
-            best_model_path = f"best_model_fold_{fold+1}"
-            model.to_disk(best_model_path)
-    
-    print(f"Best F1 Score: {best_f1_score}")
-    
-    # Load the best model from disk
-    best_model = spacy.load(best_model_path)
-    
-    # Model Deployment and Tagging with the best model
-    sample_text = "TensorFlow, developed by Google, is widely used in Python programming for machine learning projects, often requiring GPU acceleration."
-    tagged_data = tag_raw_data(best_model, sample_text)
-    print("Tagged Data:", tagged_data)
-
-    # kf = KFold(n_splits=5)  # 5-fold cross-validation
-    # for train_index, test_index in kf.split(annotated_data):
-    #     train_data = [annotated_data[i] for i in train_index]
-    #     test_data = [annotated_data[i] for i in test_index]
-    #     model = train_model(train_data, iterations=30)
-    #     evaluation_results = evaluate_model(model, test_data)
-    #     print(f"Evaluation Results: {evaluation_results}")
-
-    # # After cross-validation, train a final model on all data
-    # final_model = train_model(annotated_data, iterations=200)
-
-    # # Model Deployment and Tagging
-    # sample_text = "TensorFlow, developed by Google, is widely used in Python programming for machine learning projects, often requiring GPU acceleration."
-    # tagged_data = tag_raw_data(final_model, sample_text)
-    # print("Tagged Data:", tagged_data)
-
-if __name__ == "__main__":
-    main()
-```
-
-for results, check my GitHub repo:
-
-[Github](https://github.com/impravin22/Named_Entity_Stuff/blob/main/NER.ipynb)
-
-### Overview
-
-I developed this script to tackle a Named Entity Recognition (NER) task using the `spaCy` library, a powerful tool for natural language processing (NLP). The goal is to identify and then classify named entities (like "TensorFlow", "Google", "Python", and "Machine Learning".) within text data collected from various web sources.
-
-Overall, this proposed methodology can
-
-### a. Identify Domain-Specific Terminology
-
-By manually specifying a list of named entities such as "TensorFlow", "Google", "Python", and "Machine Learning", I focused on a specific domain (in this case, technology and programming languages). The use of `spaCy`'s `PhraseMatcher` in the `annotate_data` function allows for the efficient identification of these terms within the preprocessed text data.
-
-### b. Used in Tagging Raw Data Sourced from the Internet or Clients
-
-The `collect_data` function shows how to fetch and process text data from web pages, and tells the model's ability to work with internet-sourced data. And, the `tag_raw_data` function explains how the trained model can be applied to new, raw text data to identify and label named entities. This is very important for practical applications as it allows the model to process and extract valuable information from unstructured data, doesn't matter if it is collected from the internet or the clients.
-
-# What does NER model has to do to with pretraining?
-
-[Named Entity Recognition: The Mechanism, Methods, Use Cases,](https://www.altexsoft.com/blog/named-entity-recognition/)
-
-[A Beginner&#x27;s Introduction to NER (Named Entity Recognition)](https://www.analyticsvidhya.com/blog/2021/11/a-beginners-introduction-to-ner-named-entity-recognition/)
-
-The significance of NER models in the context of pre-training lies in their ability to enhance the performance and efficiency of named entity recognition tasks. Here are some key points:
-
-1. Transfer learning: Pre-trained models like GPT-4 or RoBERTa can be adapted for specific NER tasks, saving computational effort and often leading to better performance compared to training from scratch.
-2. Automatic feature learning: Deep learning-based NER models can learn features automatically from the data, reducing the reliance on extensive manual feature engineering required in traditional methods. This capability makes deep learning models more efficient and effective.
-3. Handling large datasets: Deep learning models, including transformer architectures like GPT, can handle vast datasets and complex structures, often outperforming traditional approaches when there is a wealth of training data available.
-4. Capturing sequential information: Recurrent Neural Networks (RNNs) and Long Short-Term Memory (LSTM) networks, which are commonly used in NER, can capture sequential information, making them suitable for processing textual data with context.
-5. Non-linear representation learning: Deep learning approaches map input data to non-linear representations, enabling the learning of complex relations present in the input data. This capability helps in building state-of-the-art NER systems.
-6. Reduced feature engineering: By using deep learning techniques, a significant amount of time and resources spent on feature engineering, which is required for traditional approaches, can be avoided.
-
-In summary, pre-trained NER models offer significant advantages in terms of performance, efficiency, and the ability to handle complex data, making them a valuable tool in the field of named entity recognition.
+[Github](https://github.com/kyegomez/SparseAttention)
 
